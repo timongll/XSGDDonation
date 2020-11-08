@@ -1,0 +1,84 @@
+scilla_version 0
+
+import BoolUtils IntUtils
+
+library SendXSGDforNFT
+
+let oneMsg : Message -> List Message =
+  fun (msg : Message) =>
+    let nil_msg = Nil {Message} in
+    Cons {Message} msg nil_msg
+
+let changed_min_code = Int32 1
+let not_owner_code = Int32 2
+let donation_less_than_min_code = Int32 3
+let token_not_XSGD_code = Int32 4
+
+(*Initiate contract that only accepts XSGD*)
+contract SendXSGDforNFT
+(
+  owner: ByStr20,
+  token_address: ByStr20,
+  nft_address: ByStr20
+)
+
+field min_amount: Uint128 = Uint128 5
+
+(*Change min_amount needed to receive NFT*)
+transition ChangeMinAmount (newMin: Uint128)
+  is_owner = builtin eq owner _sender;
+  match is_owner with 
+    | True =>
+      min_amount:= newMin;
+      e = {_eventname : "ChangedMinAmount"; newMin: newMin; code : changed_min_code};
+      event e
+    | False =>
+      e = {_eventname : "NotOwner"; code : not_owner_code};
+      event e
+  end
+end
+  
+(*Send NFT to donor*)
+procedure TransferNFTtoDonor (token_id: Uint256, donor: ByStr20)
+  transferred = {
+    _tag: "Transfer";
+    _recipient: nft_address;
+    _amount: Uint128 0;
+    to: donor;
+    token_id: token_id
+  };
+  msgs = oneMsg transferred;
+  send msgs
+end
+
+(*Receives XSGD as donation then sends an NFT to donor if meet the minimum amount*)
+transition DonateXSGD (amount: Uint128, token_id: Uint256)
+  isTokenContract = builtin eq _sender token_address;
+  match isTokenContract with 
+    | True => 
+      msg_to_token = {
+        _tag : "TransferFrom"; 
+        _recipient: token_address; 
+        _amount: Uint128 0;
+        from: _sender; 
+        to: _this_address; 
+        amount: amount
+      };
+      msgs = oneMsg msg_to_token;
+      send msgs;
+      accept;
+      (*check if amount is greater than min_amount*)
+      min_temp <- min_amount; 
+      is_donation_more_than_min = builtin lt amount min_temp;
+      match is_donation_more_than_min with 
+        | False =>
+          TransferNFTtoDonor token_id _sender
+        | True =>
+          e = {_eventname : "DonationNotEnough"; code : donation_less_than_min_code};
+          event e
+      end
+    | False =>
+      e = {_eventname : "TokenNotXSGD"; code : token_not_XSGD_code};
+      event e
+  end
+end

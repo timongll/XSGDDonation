@@ -1,0 +1,1 @@
+Simple dapp that receives XSGD as donation and sends NFT to donor if they meet the minimum donation amount.
